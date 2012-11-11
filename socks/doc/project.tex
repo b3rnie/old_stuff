@@ -1,0 +1,257 @@
+\documentclass[a4paper,12pt,swedish]{article}
+
+\usepackage[swedish]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[latin1]{inputenc}
+\usepackage{graphics}
+
+\title{INDA final project - A bandwidth-limiting SOCKS 4/5 proxy}
+\author{Björn Jensen-Urstad (810814-0271)\\bju@stacken.kth.se}
+\date{}
+
+
+\begin{document}
+\maketitle\thispagestyle{empty}
+
+\newpage
+
+\section{Introduction}
+Many small private networks often use something called a firewall.
+A firewall is a system that isolates the internal network from the
+external (which very often is the Internet).
+
+The firewall (often) allows the internal computers access to the outside
+network by offering NAT services that operate on the network-layer
+or by offering application-layer gateways such as Squid.
+
+SOCKS is a proxy protocol that operates on the application-level and
+allows users on the LAN transparent access to the external network
+without needing direct IP access. SOCKS is fairly well supported
+and can be used with most client software.
+
+\section{Intended user}
+The intended user for this software should be familiar with UNIX (the target
+platform) and basic networking concepts. He/She is most likely a system-
+administrator on a small LAN consisting of between 10 and 100 computers.
+
+His/Her goal is to connect the LAN to the internet in a secure and simple way
+and/or limit the bandwidth used by certain applications.
+
+\section{Reasons for using this program}
+This applications main feature is it's bandwidth limiting capabilities.
+This function is very useful when one for example is creating a website
+and want to see how it performs for people with slower internet connections
+or when one is mirroring a huge amount of data and want to limit the
+``data-flow'' during daytime.
+
+This program can ofcourse also be used as a ``normal'' SOCKS4/5 server.
+
+Another reason for using this program is that is's free.
+
+\section{How will it work}
+The program will run on the firewall and listen for connections on
+the internal network interface. Once the request is parsed,
+``approved'' and the nessesary connections is setup the program will 
+relay data between the internal client and the external server.
+Since all data has to pass through the program the program can
+relay the data in a user-defined speed thus slowing down the
+connection.
+
+The program will be a complete SOCKS4/5 implementation as specified in
+``RFC 1928'' and in ``SOCKS: A protocol for TCP proxy across firewalls''
+by Ying-Da Lee.
+
+\section{Requirements Analysis}
+The program will be a SOCKS 4/5 server with the ability to set maximum speed 
+in bytes/second for TCP connections passing through based on the day, time of day and the
+destination port.
+
+The program will also hava a built in HTTP server for monitoring connections.
+
+Since the program is a daemon it wont have any interactive user-interface.
+When the program is started it will print any errors encounted
+in the init phase to the console. After the init phase is finished
+any errors encountered will be directed to the logfile.
+
+All features will be accessed through the configuration file which
+can be reloaded on the fly by sending the program the SIGHUP signal.
+
+\section{Program Design}
+This program will be implemented in C++ since that is the language I
+know best. The design will be object-oriented.
+
+The configuration details are represented by the config class.
+Most of the configuration datails are primitive data types except
+the throttling details which is saved in std::vector which
+has linear search time.
+
+A socks request is represented by the socks\_request class.
+The socks\_request class consists only of primitive types.
+
+A socks reply is represented by the socks\_reply class.
+The socks\_reply class consists only of primitive types.
+
+\subsection{IO models}
+The most important decision when designing this program is probably
+choosing the appropriate IO model for handling the concurrent
+network connections. I have chosen to use nonblocking IO in this
+program. Each client connection has it's own data structure that
+contains client/server sockets and read/write buffers.
+
+Since we has to handle both socks and http connections socks connections
+will be represented by the socks\_connection class and http connections will
+be represented by the http\_connection class. Both classes will be subclasses
+of the connection class and have a common interface.
+
+All connections are then kept in a std::vector which has linear search time.
+
+Review of IO models:
+\subsubsection{blocking IO, fork on each request}
+This model is very easy to implement and it is the classical way servers are
+written in UNIX. The downside is that it's very slow.
+
+\subsubsection{blocking IO, thread for each request}
+Instead of forking on each request we can create a new thread instead.
+This is probably faster than forking but if fork is not fast enough
+this is probably not a good solution. We could create a thread pool,
+that way we dont have to create and destroy lots of threads. The program
+will still be limited by the number of threads the OS can handle.
+
+\subsubsection{nonblocking IO, IO multiplexing}
+In this model we only have one thread that uses select or poll to monitor
+readability/writeability on a set of ``file descriptors''. This model is very fast
+and probably ideal for relaying data between the connections.
+The downside is that it is pretty hard to implement complex servers with
+this model. It can ofcourse be done, the best solution is probably by
+using a state variable for each client connection but we must still be able
+to handle short reads/writes nonblocking connects/accepts etc.
+
+\subsubsection{async IO}
+A ``new'' model. I have never used it myself but it's supposed to be very fast.
+Sadly it's not widely supported and according to people who have used it
+it's hard to use, or as someone said ``like programming with lots of gotos''.
+
+\section{Implementation Plan}
+The tasks are implemented in the order they are specified in.
+I expect that it will take about a week to implement all of them.
+
+\subsection{task 1 - socket library}
+This library must support nonblocking connects/accepts and nonblocking reads and writes.
+It must also include a ``serversocket'' class that supports nonblocking accepts
+and a select class that can be used to monitor a set of sockets.
+The socket and ``serversocket'' classes will be implemented as subclasses of
+the file\_descriptor class that select operates on.
+
+This part will be separated from the project and compiled as a standalone
+library that can be reused for other projects. It will live in the io:: namespace.
+
+Expected time needed for implementation = 2 days.
+
+\subsection{task 2 - socks4/5 request parser}
+The request parser will take a sequence of bytes and try to extract the socks request.
+If the input differs from what is specified in the RFC it will notify the user (of the code).
+Once the request is parsed it will be saved in a structure.
+The parser will be implemented as a standalone function in the socks:: namespace.
+
+Expected time needed for implementation = 4 hours.
+
+\subsection{task 3 - socks4/5 response creator}
+The response creator will take the relevant options as arguments and create a valid socks4/5
+response. It will be implemented as a single function in the socks:: namespace.
+
+Expected time needed for implementation = 4 hours.
+
+\subsection{task 4 - configuration file parser}
+All configuration details are stored in the config class which also parses the configuration file.
+The configuration file is a standard text file which can easily be edited.
+The options have the form $argument = value$, which is easy to parse.
+
+Expected time needed for implementation = 4 hours.
+
+\subsection{task 5 - logging facility}
+All logging is handled by the log class. The log class can direct it's output to the
+syslog, a separate file or to the console.
+
+Expected time needed for implementation = 2 hours.
+
+\subsection{task 6 - ``main program logic''}
+Here we will bind all previous code together. We will basically monitor all our
+sockets for any changes and respond to them in a correct way.
+I expect this to be the hardest part so it will probably take at least 3
+days to complete.
+
+\section{Test Plan and Summary of Results}
+The tests are automated and will test the basic functionality
+on a running socks server. The test suites are written in Java.
+
+All tests were successful except the udp relay test since that feature
+has not yet been fully implemented. During testing I found several
+bugs in the conversation from host to network byte ordering.
+
+The test plan consists of the following tests:
+
+\subsection{socks version 4 connect}
+Client binds a serversocket. Client then opens a connection to
+the socks server and instruct the server to connect to the previously
+bound socket.
+
+\subsection{socks version 4 bind}
+Client opens a connection to the socks server and instruct the server to
+bind a port. The Client then creates a new socket connected to the bound port.
+
+\subsection{socks version 5 connect}
+Client binds a serversocket. Client then opens a connection to
+the socks server and instruct the server to connect to the previously
+bound port.
+
+\subsection{socks version 5 bind}
+Client opens a connection to the socks server and instruct the server to
+bind a port. The Client then creates a new socket connected to the bound port.
+
+\subsection{socks version 5 udp relay}
+Client opens a UDP serversocket. Client then opens a connection to the
+socks server and instruct the server to bind a UDP serversocket and relay
+packets between the the two UDP sockets.
+
+\section{User manual}
+Socks is a SOCKS 4/5 server with bandwidth limiting capabilities.
+It's used to connect a small network to the internet and/or limit 
+bandwidth used by certain services.
+
+\subsection{Supported platforms}
+Socks has been tested and is known to work under the following platforms:
+\begin{itemize}
+\item Slackware Linux 2.4 with g++ version 3.2.2.
+\item Solaris 8.0 with g++ version 3.?
+\item OpenBSD 3.4 with g++ version 3.?
+\end{itemize}
+Pretty much any new system that is POSIX compatible should work without too
+much trouble.
+
+\subsection{Installation}
+Unpack socks and enter the socks/src directory. Type make and select
+operating system. Once the compilation finishes move the socks binary to
+where you want it (often /usr/local/sbin). Don't forget to also move the
+socks.conf configuration file to your favourite configuratution directory
+(often /usr/local/etc).
+
+\subsection{Running socks}
+Befory you start socks open the configuration file (/usr/local/etc/socks.conf)
+in your editor and make the changes you want. The configuration file is
+commented and pretty straightforward. The only thing that is really important
+is to set the listen interfaces correctly since a misconfiguration might let
+anyone relay connections through the program.
+
+To start socks simply type: socks [full path to socks.conf].
+
+\section*{}
+
+\begin{tabular}{@{}l}
+  Björn Jensen-Urstad\\
+  Skyttevagen 48\\
+  18146 Lidingö\\
+  070-2584922\\
+  bju@stacken.kth.se\\
+\end{tabular}
+
+\end{document}

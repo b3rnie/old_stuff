@@ -1,0 +1,24 @@
+Socks is a SOCKS 4/5 server with bandwidth limiting capabilities.
+It's used to connect a small network to the internet and/or limit 
+bandwidth used by certain services.
+
+Socks has been tested and is known to work under the following platforms:
+* Slackware ? GNU/Linux 2.4 with g++ version 3.2.2.
+* Solaris 8.0 with g++ version 3.?
+* OpenBSD 3.4 with g++ version 3.?
+Pretty much any new system that is POSIX compatible should work without too
+much trouble.
+
+To install unpack socks and enter the socks/src directory. Type make and select
+operating system. Once the compilation finishes move the socks binary to
+where you want it (often /usr/local/sbin). Don't forget to also move the
+socks.conf configuration file to your favourite configuratution directory
+(often /usr/local/etc).
+
+Befory you start socks open the configuration file (/usr/local/etc/socks.conf)
+in your editor and make the changes you want. The configuration file is
+commented and pretty straightforward. The only thing that is *really* important
+is to set the listen interfaces correctly since a misconfiguration might let
+anyone relay connections through the program.
+
+To start socks simply type: socks [full path to socks.conf].
